@@ -1,0 +1,14 @@
+# Back&Frontend
+/*/node_modules
+
+# Frontend
+/frontend/.next/
+/frontend/out/
+/frontend/build
+
+# Backend
+/backend/data/
+/backend/dist/
+
+# Files
+.env*
