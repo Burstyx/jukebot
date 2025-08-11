@@ -1,10 +1,10 @@
 "use client";
 
-import { ChevronRight, DeleteIcon, LogOutIcon, MusicIcon, PauseIcon, Play, PlayIcon, SkipForward, StopCircleIcon, TrashIcon, UnplugIcon, UserCircle } from "lucide-react";
+import { ChevronRight, MusicIcon, PauseIcon, PlayIcon, SkipForward, StopCircleIcon } from "lucide-react";
 import ChannelSelector from "./channel-selector";
-import { Card, CardContent, CardFooter } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 import { Button } from "./ui/button";
-import { Channel, ClearQueueWSMessage, Music, NextAudioWSMessage, PauseStateUpdatedWSMessage } from "@jukebot/types";
+import { ClearQueueWSMessage, Music, NextAudioWSMessage, PauseStateUpdatedWSMessage } from "@jukebot/types";
 import ApiService from "@/services/api.service";
 import WSService from "@/services/ws.service";
 import { useEffect, useState } from "react";

@@ -65,7 +65,7 @@ export default function JukeboxFeaturePage(props: Props) {
                         filteredMusics.length > 0 ?
                             filteredMusics.map((music, index) => (
                                 <MusicCard key={index} music={music} guildId={props.guildId} />
-                            )) : <p>Aucune musique n'a encore été ajouté à ce serveur.</p>
+                            )) : <p>{"Aucune musique n'a encore été ajouté à ce serveur."}</p>
                         : <p>Oups, on dirait que le bot est actuellement indisponible :/</p>}
                 </CardContent>
             </TooltipProvider>

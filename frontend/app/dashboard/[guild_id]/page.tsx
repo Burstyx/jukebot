@@ -2,12 +2,9 @@
 
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import JukeboxFeaturePage from "@/components/jukebox-feature-page";
-import ApiService from "@/services/api.service";
 import WSService from "@/services/ws.service";
-import { Channel, Music, UpdateVCWSMessage } from "@jukebot/types"
 import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 
 export default function Page() {
     const { guild_id } = useParams()

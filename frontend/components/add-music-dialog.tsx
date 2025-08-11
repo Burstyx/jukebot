@@ -1,27 +1,24 @@
 "use client";
 
-import { Separator } from "./ui/separator";
 import { LoaderCircle, Upload } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog";
-import { Input } from "./ui/input";
 import { toast } from "sonner";
 import ApiService from "@/services/api.service";
 import { useRef, useState } from "react";
 import clsx from "clsx";
 import axios, { HttpStatusCode } from "axios";
-import { Music } from "@jukebot/types";
 
 type Props = {
     guildId: string,
 }
 
 export default function AddMusicDialog(props: Props) {
-    const ytLinkInputRef = useRef<string>("");
+    // const ytLinkInputRef = useRef<string>("");
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     const [fileIsUploading, setFileIsUploading] = useState<boolean>(false);
-    const [ytLinkIsUploading, setYtLinkIsUploading] = useState<boolean>(false);
+    // const [ytLinkIsUploading, setYtLinkIsUploading] = useState<boolean>(false);
     const [isOpen, setIsOpen] = useState<boolean>(false);
 
     async function handleUploadButton() {
@@ -86,7 +83,7 @@ export default function AddMusicDialog(props: Props) {
                             Selectionnez un fichier à ajouter dans la jukebox
                         </DialogDescription>
                     </DialogHeader>
-                    <Button variant="outline" type="submit" disabled={fileIsUploading || ytLinkIsUploading} onClick={handleUploadButton}>
+                    <Button variant="outline" type="submit" disabled={fileIsUploading} onClick={handleUploadButton}>
                         Importer un fichier
                         <LoaderCircle className={clsx("animate-spin", {
                             "hidden": !fileIsUploading
