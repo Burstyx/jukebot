@@ -33,4 +33,4 @@ app.register(guildsRoutes, { prefix: "api/v1/guilds" })
 app.register(libraryRoutes, { prefix: "api/v1/library" })
 app.register(wsRoutes, { prefix: "api/v1/ws" });
 
-app.listen({ port: Number.parseInt(PORT) });
+app.listen({ port: Number.parseInt(PORT), host: "0.0.0.0" });
