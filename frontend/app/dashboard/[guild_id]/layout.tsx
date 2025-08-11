@@ -5,7 +5,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
         <SidebarProvider>
             <Toaster />
-            <div className="flex overflow-auto w-full">
+            <div className="flex overflow-auto w-full max-h-screen p-2 gap-2">
                 {children}
             </div>
         </SidebarProvider>

@@ -2,52 +2,63 @@
 
 import DashboardSidebar from "@/components/dashboard-sidebar";
 import JukeboxFeaturePage from "@/components/jukebox-feature-page";
-import { getEnvVar } from "@/config/constants";
 import ApiService from "@/services/api.service";
-import { Channel } from "@/types/channel";
-import { MusicData } from "@/types/music";
+import WSService from "@/services/ws.service";
+import { Channel, Music, UpdateVCWSMessage } from "@jukebot/types"
 import { useParams } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 export default function Page() {
     const { guild_id } = useParams()
+    const retryDelayMs = 10000
 
-    let musics: MusicData[] | undefined = [];
-    let channels: Channel[] | undefined = [];
-
-    const socketRef = useRef<WebSocket | null>(null);
+    const reconnectTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
+    const [ws, setWs] = useState<WebSocket | undefined>(undefined);
+    const [wsError, setWsError] = useState<boolean>(false)
 
     useEffect(() => {
-        const socket = new WebSocket(`ws://127.0.0.1:5000/${guild_id}`)
-        socketRef.current = socket
+        async function initWS() {
+            function tryReconnecting() {
+                setWsError(true)
+                if (!reconnectTimerRef.current) {
+                    reconnectTimerRef.current = setTimeout(() => {
+                        console.log("attempting reconnection...");
+                        reconnectTimerRef.current = undefined
+                        initWS()
+                    }, retryDelayMs);
+                }
+            }
 
-        socket.onopen = () => {
-            socket.send(JSON.stringify({
-                type: "hello"
-            }))
+            const ws = new WebSocket(`ws://127.0.0.1:5000/api/v1/ws/${guild_id}`)
+            setWs(ws)
+
+            ws.onopen = () => { setWsError(false) }
+            ws.onmessage = (evt) => WSService.handle(evt.data)
+
+            ws.onclose = tryReconnecting
+            ws.onerror = tryReconnecting
         }
-
-        socket.onmessage = (evt) => {
-            console.log(evt.data);
-
-
-        }
-
-        socket.onerror = () => {
-            console.log("err");
-
-        }
+        initWS()
     }, [])
 
-    // musics = await ApiService.getMusics(guild_id).then((res) => res.data).catch(() => undefined);
-    // channels = await ApiService.getChannels(guild_id, "voice").then((res) => res.data).catch(() => undefined);
-
-    return (
-        <>
-            <DashboardSidebar channels={channels} />
-            <div className="flex flex-col gap-2 w-full max-h-[calc(100vh-16px)] mr-2 mt-2 overflow-auto">
-                <JukeboxFeaturePage musics={musics} />
+    if (wsError) {
+        return (
+            <div className="p-6 text-center">
+                <p className="mb-2 font-semibold">Erreur de connexion au serveur.</p>
+                <p>Nouvelle tentative dans {retryDelayMs / 1000} secondes…</p>
             </div>
-        </>
-    );
+        )
+    } else if (!ws) {
+        return (
+            <p>Loading......</p>
+        );
+    } else {
+        return (
+            <>
+                <DashboardSidebar guildId={guild_id as string} socket={ws} />
+                <JukeboxFeaturePage guildId={guild_id as string} />
+            </>
+        )
+    }
 }

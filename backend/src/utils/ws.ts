@@ -1,14 +1,12 @@
 import { WebSocket } from "@fastify/websocket";
-import { WSMessage } from "@jukebot/shared";
+import { WSServerMessage } from "@jukebot/types";
 
-export async function sendTo(socket: WebSocket, msg: WSMessage) {
-    return socket.send(JSON.stringify(msg))
-}
+export default class WS {
+    static connections = new Map<string, Set<WebSocket>>
 
-export async function sendToAll(sockets: Set<WebSocket>, msg: WSMessage) {
-
-}
-
-export async function handleMessage(sender: WebSocket, msg: WSMessage) {
-
+    static broadcast(guildId: string, msg: WSServerMessage) {
+        this.connections.get(guildId)?.forEach((con) => {
+            con.send(JSON.stringify(msg))
+        })
+    }
 }

@@ -1,38 +1,34 @@
-import { createAudioPlayer, VoiceConnection, AudioPlayerStatus, AudioResource, joinVoiceChannel, AudioPlayerState } from "@discordjs/voice";
-import { Guild } from "discord.js";
-import { JukebotClient } from "../types/global";
+import { createAudioPlayer, VoiceConnection, AudioPlayerStatus, AudioResource, joinVoiceChannel, AudioPlayerState, createAudioResource } from "@discordjs/voice";
+import { Client, Guild } from "discord.js";
+import { DATA_PATH } from "@/config/constants";
+import path from "path"
+import { Channel, Music, PauseStateUpdatedWSMessage, QueueUpdatedWSMessage } from "@jukebot/types";
+import { Jukebot } from "../jukebot";
+import WS from "@/utils/ws";
 
 export default class Jukebox {
-    private client: JukebotClient;
-    private audioPlayer = createAudioPlayer();
-    private queue: {
-        hash: string,
-        audioResource: AudioResource
-    }[] = [];
-    private guild: Guild;
-    private voiceChannelId: string | undefined;
+    public pauseState: boolean = true;
+    public guild: Guild;
+    public currentMusic?: Music;
+    public queue: Music[] = [];
+    public voiceChannelId: string | undefined;
+
+    private jukebot: Jukebot;
     private voiceConnection: VoiceConnection | undefined;
+    private audioPlayer = createAudioPlayer();
     private voiceChannelTimeout: NodeJS.Timeout | undefined;
 
-    constructor(client: JukebotClient, guild: Guild, defaultVoiceChannelId: string) {
-        this.client = client;
+    constructor(jukebot: Jukebot, guild: Guild) {
+        this.jukebot = jukebot;
         this.guild = guild;
-        this.voiceChannelId = defaultVoiceChannelId;
 
         this.audioPlayer.on("stateChange", (_, newState) => {
             if (!this.voiceConnection) return;
 
             if (newState.status === AudioPlayerStatus.Idle) {
-                const nextAudio = this.queue.shift();
-
-                if (!nextAudio) {
-                    this.voiceChannelTimeout = setTimeout(() => {
-                        this.destroy();
-                    }, 60000 * 5);
-                } else {
-                    this.playMusic(nextAudio.audioResource)
-                }
+                this.playNextAudio();
             } else {
+                this.pauseState = false
                 if (this.voiceChannelTimeout) {
                     clearTimeout(this.voiceChannelTimeout)
                     this.voiceChannelTimeout = undefined
@@ -41,82 +37,130 @@ export default class Jukebox {
         })
     }
 
-    playMusic(audioResource: AudioResource) {
+    play(music: Music) {
         if (!this.voiceChannelId) return;
 
+        const audioPath = path.join(DATA_PATH, `${music.hash}.opus`)
+        const audioResource = createAudioResource(audioPath)
+
+        this.voiceConnection?.subscribe(this.audioPlayer)
+        this.audioPlayer.play(audioResource);
+
+        return;
+    }
+
+    playNextAudio() {
+        const nextAudio = this.queue.shift();
+        this.currentMusic = nextAudio;
+
+        const msg: QueueUpdatedWSMessage = {
+            type: "queue_updated",
+            payload: {
+                current_music: this.currentMusic,
+                queue: this.queue
+            }
+        }
+        WS.broadcast(this.guild.id, msg)
+
+        if (!nextAudio) {
+            this.pauseState = true
+
+            const msg: PauseStateUpdatedWSMessage = {
+                type: "pause_state_updated",
+                payload: {
+                    pause: this.pauseState
+                }
+            }
+
+            WS.broadcast(this.guild.id, msg)
+        } else {
+            this.pauseState = false
+            this.play(nextAudio)
+
+            const msg: PauseStateUpdatedWSMessage = {
+                type: "pause_state_updated",
+                payload: {
+                    pause: this.pauseState
+                }
+            }
+
+            WS.broadcast(this.guild.id, msg)
+        }
+    }
+
+    clearQueue() {
+        this.queue = []
+        this.currentMusic = undefined
+        this.pauseState = true
+        this.audioPlayer.stop(true)
+
+        const msg: QueueUpdatedWSMessage = {
+            type: "queue_updated",
+            payload: {
+                current_music: this.currentMusic,
+                queue: this.queue
+            }
+        }
+        WS.broadcast(this.guild.id, msg)
+
+        const msg2: PauseStateUpdatedWSMessage = {
+            type: "pause_state_updated",
+            payload: {
+                pause: this.pauseState
+            }
+        }
+
+        WS.broadcast(this.guild.id, msg2)
+    }
+
+    async updatePauseState(pauseState: boolean) {
+        if (pauseState) this.pause()
+        else this.unpause()
+    }
+
+    private pause() {
+        this.pauseState = true
+        this.audioPlayer.pause()
+
+        const msg: PauseStateUpdatedWSMessage = {
+            type: "pause_state_updated",
+            payload: {
+                pause: this.pauseState
+            }
+        }
+
+        WS.broadcast(this.guild.id, msg)
+    }
+
+    private unpause() {
+        this.pauseState = false
+        if (!this.currentMusic) this.playNextAudio()
+        else this.audioPlayer.unpause()
+
+        const msg: PauseStateUpdatedWSMessage = {
+            type: "pause_state_updated",
+            payload: {
+                pause: this.pauseState
+            }
+        }
+
+        WS.broadcast(this.guild.id, msg)
+    }
+
+    joinVoiceChannel() {
+        if (!this.voiceChannelId) return;
         this.voiceConnection = joinVoiceChannel({
             adapterCreator: this.guild.voiceAdapterCreator,
             channelId: this.voiceChannelId,
             guildId: this.guild.id
         })
-
-        this.voiceConnection.subscribe(this.audioPlayer)
-        this.audioPlayer.play(audioResource);
-    }
-
-    getQueue() {
-        return this.queue
-    }
-
-    addToQueue(hash: string, audioResource: AudioResource) {
-        this.queue.push({
-            hash,
-            audioResource
-        });
-    }
-
-    removeFromQueue(index: number) {
-        this.queue.splice(index, 1);
-    }
-
-    pause() {
-        return new Promise<void>((resolve, reject) => {
-            if (this.audioPlayer.state.status === AudioPlayerStatus.Paused) resolve();
-
-            const timeout = setTimeout(() => {
-                this.audioPlayer.off("stateChange", listener);
-                reject();
-            }, 5000);
-
-            const listener = (oldState: AudioPlayerState, newState: AudioPlayerState) => {
-                if (newState.status === AudioPlayerStatus.Paused) {
-                    clearTimeout(timeout);
-                    this.audioPlayer.off("stateChange", listener);
-                    resolve();
-                }
-            }
-
-            this.audioPlayer.on("stateChange", listener);
-            this.audioPlayer.pause();
-        })
-    }
-
-    unpause() {
-        return new Promise<void>((resolve, reject) => {
-            if (this.audioPlayer.state.status === AudioPlayerStatus.Playing) resolve();            
-
-            const timeout = setTimeout(() => {
-                this.audioPlayer.off("stateChange", listener);
-                reject();
-            }, 5000);
-
-            const listener = (oldState: AudioPlayerState, newState: AudioPlayerState) => {
-                if (newState.status === AudioPlayerStatus.Playing) {
-                    clearTimeout(timeout);
-                    this.audioPlayer.off("stateChange", listener);
-                    resolve();
-                }
-            }
-
-            this.audioPlayer.on("stateChange", listener);
-            this.audioPlayer.unpause();
-        })
     }
 
     destroy() {
-        this.audioPlayer.stop();
-        this.voiceConnection?.destroy();
-        clearTimeout(this.voiceChannelTimeout);
-        this.client.jukeboxes.delete(this.guild.id);
+        try {
+            this.audioPlayer.stop();
+            this.voiceConnection?.destroy();
+            clearTimeout(this.voiceChannelTimeout);
+        } catch { }
     }
 }

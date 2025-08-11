@@ -10,11 +10,10 @@ import ApiService from "@/services/api.service";
 import { useRef, useState } from "react";
 import clsx from "clsx";
 import axios, { HttpStatusCode } from "axios";
-import { MusicData } from "@/types/music";
+import { Music } from "@jukebot/types";
 
 type Props = {
     guildId: string,
-    onUpdateMusic: (data: MusicData[]) => void;
 }
 
 export default function AddMusicDialog(props: Props) {
@@ -50,8 +49,6 @@ export default function AddMusicDialog(props: Props) {
 
                     toast.success("Upload réussi", { description: `${file.name} a été uploadé avec succès.` });
                     console.log(response.data);
-
-                    props.onUpdateMusic(response.data);
 
                     setFileIsUploading(false);
                     setIsOpen(false);

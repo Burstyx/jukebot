@@ -3,22 +3,35 @@
 import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
 import AddMusicDialog from "./add-music-dialog";
-import { MusicData } from "@/types/music";
 import { TooltipProvider } from "./ui/tooltip";
 import MusicCard from "./music-card";
+import { Music } from "@jukebot/types";
+import WSService from "@/services/ws.service";
+import ApiService from "@/services/api.service";
 
 type Props = {
-    musics: MusicData[] | undefined
+    guildId: string,
 }
 
 export default function JukeboxFeaturePage(props: Props) {
     const [searchQuery, setSearchQuery] = useState<string>("");
-    const [musics, setMusics] = useState<MusicData[] | undefined>(props.musics);
-    const [filteredMusics, setFilteredMusics] = useState<MusicData[] | undefined>(musics);
+    const [musics, setMusics] = useState<Music[]>([]);
+    const [filteredMusics, setFilteredMusics] = useState<Music[] | undefined>(musics);
 
-    const { guild_id } = useParams();
+    useEffect(() => {
+        ApiService.getMusics(props.guildId).then((res) => setMusics(res.data))
+
+        const onMusicAdded = (music: Music) => setMusics(prev => [...prev, music])
+        const onMusicRemoved = (music: Music) => setMusics(prev => prev.filter(m => m.hash !== music.hash))
+        WSService.wsEvents.on("music_added", onMusicAdded)
+        WSService.wsEvents.on("music_removed", onMusicRemoved)
+
+        return () => {
+            WSService.wsEvents.off("music_added", onMusicAdded)
+            WSService.wsEvents.off("music_removed", onMusicRemoved)
+        }
+    }, [])
 
     useEffect(() => {
         filterMusics(searchQuery)
@@ -43,7 +56,7 @@ export default function JukeboxFeaturePage(props: Props) {
     return (
         <Card className="flex-1 overflow-auto">
             <CardHeader className="flex">
-                <AddMusicDialog guildId={guild_id as string} onUpdateMusic={setMusics} />
+                <AddMusicDialog guildId={props.guildId} />
                 <Input placeholder="Rechercher" onChange={(e) => setSearchQuery(e.target.value)} />
             </CardHeader>
             <TooltipProvider>
@@ -51,7 +64,7 @@ export default function JukeboxFeaturePage(props: Props) {
                     {filteredMusics ?
                         filteredMusics.length > 0 ?
                             filteredMusics.map((music, index) => (
-                                <MusicCard key={index} music={music} guild_id={guild_id as string} onUpdateMusic={setMusics} />
+                                <MusicCard key={index} music={music} guildId={props.guildId} />
                             )) : <p>Aucune musique n'a encore été ajouté à ce serveur.</p>
                         : <p>Oups, on dirait que le bot est actuellement indisponible :/</p>}
                 </CardContent>

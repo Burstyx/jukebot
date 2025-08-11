@@ -1,17 +1,20 @@
 import fs from "fs";
 import path from "path";
 import { DATA_PATH } from "@/config/constants";
-import { GuildData, StoredData } from "@/types/data";
 import AudioUtils from "./audio";
+import { Music } from "@jukebot/types";
+
+interface GuildData { [hash: string]: Music }
+interface StoredData { [hash: string]: number }
 
 export default class DataParser {
     static async getMusics(guildId: string) {
         const guildMusicsPath = path.join(DATA_PATH, `${guildId}.json`)
 
         const content = await fs.promises.readFile(guildMusicsPath, "utf-8").catch(() => "{}")
-        const musics: GuildData = JSON.parse(content);
+        const musicsData: GuildData = JSON.parse(content)
 
-        return musics;
+        return musicsData
     }
 
     static async updateMusics(guildId: string, musics: GuildData) {
@@ -51,22 +54,27 @@ export default class DataParser {
         return stored;
     }
 
-    static async addMusic(guildId: string, musicHash: string, rawData: any, musicName: string) {
-        const musicPath = path.join(DATA_PATH, `${musicHash}.tmp`);
+    static async addMusic(guildId: string, rawData: any, music: Music) {
+        const musicPath = path.join(DATA_PATH, `${music.hash}.tmp`);
         const musics = await this.getMusics(guildId);
         const stored = await this.getStored();
 
-        if (!stored.hasOwnProperty(musicHash)) {
+        if (!stored.hasOwnProperty(music.hash)) {
             await fs.promises.writeFile(musicPath, rawData);
-            await AudioUtils.compressAndConvertToOpus(musicHash);
+            await AudioUtils.compressAndConvertToOpus(music.hash);
         }
 
-        musics[musicHash] = musicName;
+        musics[music.hash] = music
 
         await this.updateMusics(guildId, musics);
-        await this.updateStoredTracker(musicHash, "add");
+        await this.updateStoredTracker(music.hash, "add");
 
         return musics;
+    }
+
+    static async getMusic(guildId: string, musicHash: string) {
+        const musics = await this.getMusics(guildId);
+        return musics[musicHash]
     }
 
     static async removeMusic(guildId: string, musicHash: string) {
@@ -87,15 +95,7 @@ export default class DataParser {
         return musics;
     }
 
-    static toMusicList(guildData: GuildData) {
-        return Object.entries(guildData).map(([musicHash, musicName]) => ({
-            hash: musicHash,
-            name: musicName,
-        }))
-    }
-
-    static async getNameFromHash(guildId: string, musicHash: string) {
-        const musics = await this.getMusics(guildId);
-        return musics[musicHash];
+    static toMusicList(guildData: GuildData): Music[] {
+        return Object.entries(guildData).map(([_, music]) => music)
     }
 }
