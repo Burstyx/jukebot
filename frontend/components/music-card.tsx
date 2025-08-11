@@ -45,7 +45,7 @@ export default function MusicCard(props: Props) {
                                 <PlusIcon className="min-w-[24px]" />
                                 <div className="flex flex-col w-[calc(100%-24px)]">
                                     <p className="truncate">{decodeURI(props.music.name)}</p>
-                                    <span className="text-sm text-gray-400">Music author</span>
+                                    <span className="text-sm text-gray-400">{props.music.author}</span>
                                 </div>
                             </CardContent>
                         </Card>
