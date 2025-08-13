@@ -25,11 +25,11 @@ export class Jukebot {
 
             // Détecter l'action
             if (!oldState.channelId && newState.channelId) {
-                console.log(`[VOICE] ${username} a rejoint le salon vocal ${newState.channel?.name || newState.channelId}`);
+                console.log(`[${new Date().toLocaleString()}] [VOICE] ${username} a rejoint le salon vocal ${newState.channel?.name || newState.channelId}`);
             } else if (oldState.channelId && !newState.channelId) {
-                console.log(`[VOICE] ${username} a quitté le salon vocal ${oldState.channel?.name || oldState.channelId}`);
+                console.log(`[${new Date().toLocaleString()}] [VOICE] ${username} a quitté le salon vocal ${oldState.channel?.name || oldState.channelId}`);
             } else if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId) {
-                console.log(`[VOICE] ${username} a été déplacé de ${oldState.channel?.name || oldState.channelId} vers ${newState.channel?.name || newState.channelId}`);
+                console.log(`[${new Date().toLocaleString()}] [VOICE] ${username} a été déplacé de ${oldState.channel?.name || oldState.channelId} vers ${newState.channel?.name || newState.channelId}`);
             }
 
             // --- TON CODE EXISTANT POUR LE BOT ---
