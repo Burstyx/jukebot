@@ -19,19 +19,30 @@ export class Jukebot {
         })
 
         this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+            const guildId = newState.guild.id;
+            const member = newState.member;
+            const username = member?.user?.tag || member?.id;
+
+            // Détecter l'action
+            if (!oldState.channelId && newState.channelId) {
+                console.log(`[VOICE] ${username} a rejoint le salon vocal ${newState.channel?.name || newState.channelId}`);
+            } else if (oldState.channelId && !newState.channelId) {
+                console.log(`[VOICE] ${username} a quitté le salon vocal ${oldState.channel?.name || oldState.channelId}`);
+            } else if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId) {
+                console.log(`[VOICE] ${username} a été déplacé de ${oldState.channel?.name || oldState.channelId} vers ${newState.channel?.name || newState.channelId}`);
+            }
+
+            // --- TON CODE EXISTANT POUR LE BOT ---
             // seulement le bot
             if (newState.id !== this.client.user?.id) return;
 
-            const newChannelId = newState.channelId;
-            const guildId = newState.guild.id;
-
             // ignorer si pas de vrai changement
-            if (oldState.channelId === newChannelId) return;
+            if (oldState.channelId === newState.channelId) return;
 
             const jukebox = this.jukeboxes.get(guildId);
             if (!jukebox) return;
 
-            if (newChannelId) {
+            if (newState.channelId) {
                 // attendre que la connexion soit prête avant d'annoncer
                 const conn = getVoiceConnection(guildId);
                 if (!conn) return;
@@ -41,19 +52,15 @@ export class Jukebot {
                     return; // pas prêt -> on n’émet pas
                 }
 
-                jukebox.voiceChannelId = newChannelId;
-                WS.broadcast(guildId, { type: "update_vc", payload: { channelId: newChannelId } });
+                jukebox.voiceChannelId = newState.channelId;
+                WS.broadcast(guildId, { type: "update_vc", payload: { channelId: newState.channelId } });
             } else {
                 // le bot a QUITTÉ le vocal -> on émet aussi
-                jukebox.voiceChannelId = undefined; // ou null si tu préfères
-                console.log("test");
-
+                jukebox.voiceChannelId = undefined;
                 WS.broadcast(guildId, { type: "update_vc", payload: { channelId: undefined } });
                 this.destroyJukebox(guildId);
             }
         });
-
-
 
         this.client.login(DISCORD_TOKEN)
     }
