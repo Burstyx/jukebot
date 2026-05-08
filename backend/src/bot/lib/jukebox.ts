@@ -25,11 +25,10 @@ export default class Jukebox {
 
   private voiceConnection: VoiceConnection | undefined;
   private voiceConnectionPromise: Promise<VoiceConnection> | undefined;
-  private voiceConnectionPromiseTarget: string | undefined;
+  private pendingVoiceChannelId: string | undefined;
   private connectedVoiceChannelId: string | undefined;
   private observedVoiceConnection: VoiceConnection | undefined;
   private audioPlayer = createAudioPlayer();
-  private voiceChannelTimeout: NodeJS.Timeout | undefined;
 
   /**
    * Initialize playlist handler
@@ -45,19 +44,12 @@ export default class Jukebox {
         this.pauseState = true;
         WS.updatePauseState(this.guild.id, this.pauseState);
         if (this.currentMusic) void this.playNextAudio();
-      }
-      else if (newState.status === AudioPlayerStatus.Paused) {
+      } else if (newState.status === AudioPlayerStatus.Paused) {
         this.pauseState = true;
         WS.updatePauseState(this.guild.id, this.pauseState);
-      }
-      else if (newState.status === AudioPlayerStatus.Playing) {
+      } else if (newState.status === AudioPlayerStatus.Playing) {
         this.pauseState = false;
         WS.updatePauseState(this.guild.id, this.pauseState);
-      }
-      
-      if (this.voiceChannelTimeout) {
-        clearTimeout(this.voiceChannelTimeout);
-        this.voiceChannelTimeout = undefined;
       }
     });
 
@@ -105,7 +97,7 @@ export default class Jukebox {
     const nextAudio = this.queue.shift();
 
     if (!nextAudio) {
-      this.resetQueue()
+      this.resetQueue();
     } else {
       this.currentMusic = nextAudio;
       this.pauseState = false;
@@ -142,7 +134,7 @@ export default class Jukebox {
       this.audioPlayer.stop(true);
     }
 
-    WS.updateQueue(this.guild.id, this.currentMusic, this.queue)
+    WS.updateQueue(this.guild.id, this.currentMusic, this.queue);
   }
 
   /**
@@ -181,19 +173,7 @@ export default class Jukebox {
     return this.connectedVoiceChannelId === this.voiceChannelId;
   }
 
-  public syncVoiceChannel(channelId: string): void {
-    this.voiceChannelId = channelId;
-    this.connectedVoiceChannelId = channelId;
-
-    if (
-      this.voiceConnection &&
-      this.voiceConnection.state.status === VoiceConnectionStatus.Ready
-    ) {
-      this.attachAudioPlayer(this.voiceConnection);
-    }
-  }
-
-  public async syncExternalVoiceChannel(channelId: string): Promise<void> {
+  public async moveVoiceConnection(channelId: string): Promise<void> {
     this.voiceChannelId = channelId;
     this.connectedVoiceChannelId = channelId;
 
@@ -224,7 +204,7 @@ export default class Jukebox {
     }
 
     if (this.voiceConnectionPromise) {
-      if (this.voiceConnectionPromiseTarget === targetChannelId) {
+      if (this.pendingVoiceChannelId === targetChannelId) {
         return await this.voiceConnectionPromise;
       }
 
@@ -243,7 +223,10 @@ export default class Jukebox {
     }
 
     let connection = this.voiceConnection;
-    if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) {
+    if (
+      connection &&
+      connection.state.status !== VoiceConnectionStatus.Destroyed
+    ) {
       const moved = connection.rejoin({
         channelId: targetChannelId,
         selfDeaf: false,
@@ -264,11 +247,13 @@ export default class Jukebox {
 
     this.observeVoiceConnection(connection);
 
-    this.voiceConnectionPromiseTarget = targetChannelId;
-    this.voiceConnectionPromise = this.ensureVoiceConnectionReady().finally(() => {
-      this.voiceConnectionPromise = undefined;
-      this.voiceConnectionPromiseTarget = undefined;
-    });
+    this.pendingVoiceChannelId = targetChannelId;
+    this.voiceConnectionPromise = this.ensureVoiceConnectionReady().finally(
+      () => {
+        this.voiceConnectionPromise = undefined;
+        this.pendingVoiceChannelId = undefined;
+      },
+    );
 
     return await this.voiceConnectionPromise;
   }
@@ -329,7 +314,7 @@ export default class Jukebox {
   private destroyVoiceConnection(): void {
     const connection = this.voiceConnection;
     this.voiceConnectionPromise = undefined;
-    this.voiceConnectionPromiseTarget = undefined;
+    this.pendingVoiceChannelId = undefined;
     if (!connection) return;
 
     this.destroyConnection(connection);
@@ -365,8 +350,6 @@ export default class Jukebox {
 
       this.audioPlayer.stop();
       this.destroyVoiceConnection();
-      clearTimeout(this.voiceChannelTimeout);
-      this.voiceChannelTimeout = undefined;
     } catch {
       console.error(`destroy: Destroy jukebox audio components failed: ${this.guild.id}`)
     }

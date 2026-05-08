@@ -2,10 +2,7 @@ import { Jukebot } from "@/bot/jukebot";
 import WS from "@/utils/ws";
 import { WebSocket } from "@fastify/websocket";
 import {
-  ClearQueueWSMessage,
-  NextAudioWSMessage,
   PauseStateUpdatedWSMessage,
-  QueueUpdatedWSMessage,
   UpdateVCClientMessage,
   WSClientMessage,
   WSServerMessage,
@@ -15,7 +12,7 @@ export default class WSService {
   socket: WebSocket;
   jukebot: Jukebot;
   guildId: string;
-  private static voiceChannelUpdateVersions = new Map<string, number>();
+  private static voiceChannelVersions = new Map<string, number>();
 
   constructor(socket: WebSocket, jukebot: Jukebot, guildId: string) {
     this.socket = socket;
@@ -40,13 +37,13 @@ export default class WSService {
         // Handle messages
         switch (data.type) {
           case "update_vc":
-            return await this.updateVC(this.socket, data);
+            return await this.updateVC(data);
           case "pause_state_updated":
-            return await this.updatePauseState(this.socket, data);
+            return await this.updatePauseState(data);
           case "next_audio":
-            return await this.nextAudio(this.socket, data);
+            return await this.nextAudio();
           case "clear_queue":
-            return await this.clearQueue(this.socket, data);
+            return await this.clearQueue();
           default:
             const msg: WSServerMessage = {
               type: "error",
@@ -83,9 +80,14 @@ export default class WSService {
     return jukebox;
   }
 
-  private async updateVC(socket: WebSocket, data: UpdateVCClientMessage) {
-    const version = (WSService.voiceChannelUpdateVersions.get(this.guildId) ?? 0) + 1;
-    WSService.voiceChannelUpdateVersions.set(this.guildId, version);
+  private nextVoiceChannelVersion() {
+    const version = (WSService.voiceChannelVersions.get(this.guildId) ?? 0) + 1;
+    WSService.voiceChannelVersions.set(this.guildId, version);
+    return version;
+  }
+
+  private async updateVC(data: UpdateVCClientMessage) {
+    const version = this.nextVoiceChannelVersion();
 
     const jukebox = await this.getJukebox();
     jukebox.voiceChannelId = data.payload.channelId;
@@ -93,26 +95,23 @@ export default class WSService {
 
     if (
       didJoinRequestedChannel &&
-      WSService.voiceChannelUpdateVersions.get(this.guildId) === version
+      WSService.voiceChannelVersions.get(this.guildId) === version
     ) {
       WS.updateVoiceChannel(this.guildId, data.payload.channelId ?? null);
     }
   }
 
-  private async updatePauseState(
-    socket: WebSocket,
-    data: PauseStateUpdatedWSMessage,
-  ) {
+  private async updatePauseState(data: PauseStateUpdatedWSMessage) {
     const jukebox = await this.getJukebox();
     await jukebox.updatePauseState(data.payload.pause);
   }
 
-  private async nextAudio(socket: WebSocket, data: NextAudioWSMessage) {
+  private async nextAudio() {
     const jukebox = await this.getJukebox();
     await jukebox.playNextAudio();
   }
 
-  private async clearQueue(socket: WebSocket, data: ClearQueueWSMessage) {
+  private async clearQueue() {
     const jukebox = await this.getJukebox();
     jukebox.resetQueue();
   }

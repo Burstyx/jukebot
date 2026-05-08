@@ -57,8 +57,8 @@ export class Jukebot {
 
       const jukebox = this.jukeboxes.get(guildId);
       if (jukebox) {
-        void jukebox.syncExternalVoiceChannel(newChannelId).catch((err) => {
-          console.error(`syncExternalVoiceChannel: Failed for guild ${guildId}:`, err);
+        void jukebox.moveVoiceConnection(newChannelId).catch((err) => {
+          console.error(`moveVoiceConnection: Failed for guild ${guildId}:`, err);
         });
       }
 
