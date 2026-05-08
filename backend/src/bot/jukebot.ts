@@ -47,6 +47,8 @@ export class Jukebot {
       if (!guildId) return;
 
       if (!newChannelId) {
+        const jukebox = this.jukeboxes.get(guildId);
+        jukebox?.disconnectVoiceConnection();
         this.scheduleVoiceDisconnect(guildId);
         return;
       }
@@ -55,8 +57,8 @@ export class Jukebot {
 
       const jukebox = this.jukeboxes.get(guildId);
       if (jukebox) {
-        void jukebox.syncVoiceChannel(newChannelId).catch((err) => {
-          console.error(`syncVoiceChannel: Failed for guild ${guildId}:`, err);
+        void jukebox.syncExternalVoiceChannel(newChannelId).catch((err) => {
+          console.error(`syncExternalVoiceChannel: Failed for guild ${guildId}:`, err);
         });
       }
 

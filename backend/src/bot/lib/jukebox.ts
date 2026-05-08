@@ -25,6 +25,7 @@ export default class Jukebox {
 
   private voiceConnection: VoiceConnection | undefined;
   private voiceConnectionPromise: Promise<VoiceConnection> | undefined;
+  private voiceConnectionPromiseTarget: string | undefined;
   private connectedVoiceChannelId: string | undefined;
   private observedVoiceConnection: VoiceConnection | undefined;
   private audioPlayer = createAudioPlayer();
@@ -177,45 +178,96 @@ export default class Jukebox {
   public async joinVoiceChannel(): Promise<boolean> {
     const connection = await this.createVoiceConnection();
     this.attachAudioPlayer(connection);
-    return true
+    return this.connectedVoiceChannelId === this.voiceChannelId;
   }
 
-  public async syncVoiceChannel(channelId: string): Promise<void> {
+  public syncVoiceChannel(channelId: string): void {
     this.voiceChannelId = channelId;
-    const connection = await this.createVoiceConnection();
-    this.attachAudioPlayer(connection);
+    this.connectedVoiceChannelId = channelId;
+
+    if (
+      this.voiceConnection &&
+      this.voiceConnection.state.status === VoiceConnectionStatus.Ready
+    ) {
+      this.attachAudioPlayer(this.voiceConnection);
+    }
+  }
+
+  public async syncExternalVoiceChannel(channelId: string): Promise<void> {
+    this.voiceChannelId = channelId;
+    this.connectedVoiceChannelId = channelId;
+
+    if (
+      this.voiceConnection &&
+      this.voiceConnection.state.status !== VoiceConnectionStatus.Destroyed
+    ) {
+      const moved = this.voiceConnection.rejoin({
+        channelId,
+        selfDeaf: false,
+        selfMute: false,
+      });
+      if (!moved) throw new Error("Could not update Discord voice channel.");
+
+      this.attachAudioPlayer(await this.ensureVoiceConnectionReady());
+    }
+  }
+
+  public disconnectVoiceConnection(): void {
+    this.voiceChannelId = undefined;
+    this.destroyVoiceConnection();
   }
 
   private async createVoiceConnection(): Promise<VoiceConnection> {
-    if (!this.voiceChannelId) {
+    const targetChannelId = this.voiceChannelId;
+    if (!targetChannelId) {
       throw new Error("No voice channel selected.");
     }
 
     if (this.voiceConnectionPromise) {
-      return await this.voiceConnectionPromise;
+      if (this.voiceConnectionPromiseTarget === targetChannelId) {
+        return await this.voiceConnectionPromise;
+      }
+
+      await this.voiceConnectionPromise.catch(() => undefined);
+      if (this.voiceChannelId !== targetChannelId) {
+        return await this.createVoiceConnection();
+      }
     }
 
     if (
       this.voiceConnection &&
       this.voiceConnection.state.status !== VoiceConnectionStatus.Destroyed &&
-      this.connectedVoiceChannelId === this.voiceChannelId
+      this.connectedVoiceChannelId === targetChannelId
     ) {
       return await this.ensureVoiceConnectionReady();
     }
 
-    const connection = joinVoiceChannel({
-      adapterCreator: this.guild.voiceAdapterCreator,
-      channelId: this.voiceChannelId,
-      guildId: this.guild.id,
-      selfDeaf: false,
-    });
+    let connection = this.voiceConnection;
+    if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) {
+      const moved = connection.rejoin({
+        channelId: targetChannelId,
+        selfDeaf: false,
+        selfMute: false,
+      });
+      if (!moved) throw new Error("Could not update Discord voice channel.");
+    } else {
+      connection = joinVoiceChannel({
+        adapterCreator: this.guild.voiceAdapterCreator,
+        channelId: targetChannelId,
+        guildId: this.guild.id,
+        selfDeaf: false,
+      });
+    }
+
     this.voiceConnection = connection;
-    this.connectedVoiceChannelId = this.voiceChannelId;
+    this.connectedVoiceChannelId = targetChannelId;
 
     this.observeVoiceConnection(connection);
 
+    this.voiceConnectionPromiseTarget = targetChannelId;
     this.voiceConnectionPromise = this.ensureVoiceConnectionReady().finally(() => {
       this.voiceConnectionPromise = undefined;
+      this.voiceConnectionPromiseTarget = undefined;
     });
 
     return await this.voiceConnectionPromise;
@@ -277,6 +329,7 @@ export default class Jukebox {
   private destroyVoiceConnection(): void {
     const connection = this.voiceConnection;
     this.voiceConnectionPromise = undefined;
+    this.voiceConnectionPromiseTarget = undefined;
     if (!connection) return;
 
     this.destroyConnection(connection);

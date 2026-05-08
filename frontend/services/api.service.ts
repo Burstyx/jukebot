@@ -43,7 +43,7 @@ export default class ApiService {
   }
 
   static async getSelectedChannelId(guildId: string) {
-    return await axios.get<{ ok: boolean; channel_id?: string }>(
+    return await axios.get<{ ok: boolean; channel_id?: string | null }>(
       `${API_URL}/guilds/get_selected_channel/${guildId}`,
       {
         headers: {

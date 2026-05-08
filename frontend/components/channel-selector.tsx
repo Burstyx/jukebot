@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Select,
   SelectTrigger,
@@ -21,18 +21,21 @@ type Props = {
 
 export default function ChannelSelector(props: Props) {
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [selectedChannelId, setSelectedChannelId] = useState<
-    string | undefined
-  >(undefined);
+  const [selectedChannelId, setSelectedChannelId] = useState("");
+  const selectedByUserRef = useRef(false);
 
   useEffect(() => {
+    selectedByUserRef.current = false;
+
     ApiService.getChannels(props.guildId).then((res) => setChannels(res.data));
-    ApiService.getSelectedChannelId(props.guildId).then((res) =>
-      setSelectedChannelId(res.data.channel_id),
-    );
+    ApiService.getSelectedChannelId(props.guildId).then((res) => {
+      if (!selectedByUserRef.current) {
+        setSelectedChannelId(res.data.channel_id ?? "");
+      }
+    });
 
     const onUpdateVC = (channelId?: string | null) =>
-      setSelectedChannelId(channelId ?? undefined);
+      setSelectedChannelId(channelId ?? "");
     WSService.wsEvents.on("update_vc", onUpdateVC);
 
     return () => {
@@ -41,6 +44,7 @@ export default function ChannelSelector(props: Props) {
   }, [props.guildId]);
 
   function updateSelectedChannel(channelId: string) {
+    selectedByUserRef.current = true;
     setSelectedChannelId(channelId);
 
     const data: UpdateVCClientMessage = {

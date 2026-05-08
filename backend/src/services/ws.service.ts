@@ -15,6 +15,7 @@ export default class WSService {
   socket: WebSocket;
   jukebot: Jukebot;
   guildId: string;
+  private static voiceChannelUpdateVersions = new Map<string, number>();
 
   constructor(socket: WebSocket, jukebot: Jukebot, guildId: string) {
     this.socket = socket;
@@ -83,10 +84,19 @@ export default class WSService {
   }
 
   private async updateVC(socket: WebSocket, data: UpdateVCClientMessage) {
+    const version = (WSService.voiceChannelUpdateVersions.get(this.guildId) ?? 0) + 1;
+    WSService.voiceChannelUpdateVersions.set(this.guildId, version);
+
     const jukebox = await this.getJukebox();
     jukebox.voiceChannelId = data.payload.channelId;
-    await jukebox.joinVoiceChannel();
-    WS.updateVoiceChannel(this.guildId, data.payload.channelId ?? null);
+    const didJoinRequestedChannel = await jukebox.joinVoiceChannel();
+
+    if (
+      didJoinRequestedChannel &&
+      WSService.voiceChannelUpdateVersions.get(this.guildId) === version
+    ) {
+      WS.updateVoiceChannel(this.guildId, data.payload.channelId ?? null);
+    }
   }
 
   private async updatePauseState(
