@@ -1,0 +1,10 @@
+.git
+.env
+**/node_modules
+**/.next
+**/dist
+**/out
+**/build
+backend/data
+data
+npm-debug.log*

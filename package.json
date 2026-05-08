@@ -1,0 +1,18 @@
+{
+    "name": "jukebot",
+    "private": true,
+    "workspaces": [
+        "backend",
+        "frontend",
+        "types"
+    ],
+    "scripts": {
+        "lint": "npm run -ws --if-present lint",
+        "format": "prettier -w .",
+        "build": "npm run -ws --if-present build"
+    },
+    "devDependencies": {
+        "prettier": "^3.8.1",
+        "typescript": "^5.9.3"
+    }
+}

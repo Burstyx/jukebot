@@ -3,36 +3,49 @@ import DataParser from "@/utils/parser";
 import { ChannelType } from "discord.js";
 
 export default class GuildsService {
-    static async getChannels(jukebot: Jukebot, guildId: string) {
-        return await jukebot.getChannels(guildId, ChannelType.GuildVoice);
+  private static async getJukebox(jukebot: Jukebot, guildId: string) {
+    const guildJukebox = await jukebot.createJukebox(guildId);
+    if (!guildJukebox) {
+      throw new Error(`Impossible de créer la jukebox du serveur ${guildId}`);
     }
 
-    static async getSelectedChannel(jukebot: Jukebot, guildId: string) {
-        return (await jukebot.createAndGetJukebox(guildId)).voiceChannelId
-    }
+    return guildJukebox;
+  }
 
-    static async getMusics(jukebot: Jukebot, guildId: string) {
-        return await jukebot.getMusics(guildId)
-    }
+  static async getChannels(jukebot: Jukebot, guildId: string) {
+    return await jukebot.getChannels(guildId, ChannelType.GuildVoice);
+  }
 
-    static async getCurrentMusic(jukebot: Jukebot, guildId: string) {
-        return (await jukebot.createAndGetJukebox(guildId)).currentMusic
-    }
+  static async getSelectedChannel(jukebot: Jukebot, guildId: string) {
+    return (await this.getJukebox(jukebot, guildId)).voiceChannelId;
+  }
 
-    static async addToQueue(jukebot: Jukebot, guildId: string, musicHash: string) {
-        const music = await DataParser.getMusic(guildId, musicHash)
-        const jukebox = await jukebot.createAndGetJukebox(guildId)
+  static async getMusics(jukebot: Jukebot, guildId: string) {
+    return await jukebot.getMusics(guildId);
+  }
 
-        jukebox.queue.push(music)
+  static async getCurrentMusic(jukebot: Jukebot, guildId: string) {
+    return (await this.getJukebox(jukebot, guildId)).currentMusic;
+  }
 
-        return music;
-    }
+  static async addToQueue(
+    jukebot: Jukebot,
+    guildId: string,
+    musicHash: string,
+  ) {
+    const music = await DataParser.getMusic(guildId, musicHash);
+    const jukebox = await this.getJukebox(jukebot, guildId);
 
-    static async getQueue(jukebot: Jukebot, guildId: string) {
-        return (await jukebot.createAndGetJukebox(guildId)).queue || []
-    }
+    jukebox.queue.push(music);
 
-    static async getPauseState(jukebot: Jukebot, guildId: string) {
-        return (await jukebot.createAndGetJukebox(guildId)).pauseState
-    }
+    return music;
+  }
+
+  static async getQueue(jukebot: Jukebot, guildId: string) {
+    return (await this.getJukebox(jukebot, guildId)).queue || [];
+  }
+
+  static async getPauseState(jukebot: Jukebot, guildId: string) {
+    return (await this.getJukebox(jukebot, guildId)).pauseState;
+  }
 }

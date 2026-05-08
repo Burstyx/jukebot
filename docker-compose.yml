@@ -1,0 +1,28 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    env_file:
+      - .env
+    environment:
+      PORT: 3001
+      DATA_PATH: /data
+      FRONTEND_URL: http://localhost:3000
+    network_mode: host
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+        NEXT_PUBLIC_WS_URL: ws://localhost:3001/api/v1/ws
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped

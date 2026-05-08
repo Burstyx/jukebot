@@ -1,13 +1,9 @@
-import { SidebarProvider } from "@/components/ui/sidebar";
-import { Toaster } from "@/components/ui/sonner";
+import DashboardFrame from "@/components/dashboard-frame";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-    return (
-        <SidebarProvider>
-            <Toaster />
-            <div className="flex overflow-auto w-full max-h-screen p-2 gap-2">
-                {children}
-            </div>
-        </SidebarProvider>
-    )
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <DashboardFrame>{children}</DashboardFrame>;
 }

@@ -9,6 +9,8 @@
 # Backend
 /backend/data/
 /backend/dist/
+/data/
 
 # Files
-.env*
+.env
+node_modules

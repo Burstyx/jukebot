@@ -1,166 +1,321 @@
-import { createAudioPlayer, VoiceConnection, AudioPlayerStatus, AudioResource, joinVoiceChannel, AudioPlayerState, createAudioResource } from "@discordjs/voice";
-import { Client, Guild } from "discord.js";
+import {
+  createAudioPlayer,
+  VoiceConnection,
+  AudioPlayerStatus,
+  joinVoiceChannel,
+  createAudioResource,
+  entersState,
+  VoiceConnectionStatus,
+} from "@discordjs/voice";
+import { Guild } from "discord.js";
 import { DATA_PATH } from "@/config/constants";
-import path from "path"
-import { Channel, Music, PauseStateUpdatedWSMessage, QueueUpdatedWSMessage } from "@jukebot/types";
-import { Jukebot } from "../jukebot";
+import path from "path";
+import fs from "fs";
+import { Music } from "@jukebot/types";
 import WS from "@/utils/ws";
 
 export default class Jukebox {
-    public pauseState: boolean = true;
-    public guild: Guild;
-    public currentMusic?: Music;
-    public queue: Music[] = [];
-    public voiceChannelId: string | undefined;
+  private static readonly voiceReadyTimeoutMs = 30_000;
 
-    private jukebot: Jukebot;
-    private voiceConnection: VoiceConnection | undefined;
-    private audioPlayer = createAudioPlayer();
-    private voiceChannelTimeout: NodeJS.Timeout | undefined;
+  public pauseState: boolean = true;
+  public guild: Guild;
+  public currentMusic?: Music;
+  public queue: Music[] = [];
+  public voiceChannelId: string | undefined;
 
-    constructor(jukebot: Jukebot, guild: Guild) {
-        this.jukebot = jukebot;
-        this.guild = guild;
+  private voiceConnection: VoiceConnection | undefined;
+  private voiceConnectionPromise: Promise<VoiceConnection> | undefined;
+  private connectedVoiceChannelId: string | undefined;
+  private observedVoiceConnection: VoiceConnection | undefined;
+  private audioPlayer = createAudioPlayer();
+  private voiceChannelTimeout: NodeJS.Timeout | undefined;
 
-        this.audioPlayer.on("stateChange", (_, newState) => {
-            if (!this.voiceConnection) return;
+  /**
+   * Initialize playlist handler
+   * @param guild Associated guild of the jukebox
+   */
+  constructor(guild: Guild) {
+    this.guild = guild;
 
-            if (newState.status === AudioPlayerStatus.Idle) {
-                this.playNextAudio();
-            } else {
-                this.pauseState = false
-                if (this.voiceChannelTimeout) {
-                    clearTimeout(this.voiceChannelTimeout)
-                    this.voiceChannelTimeout = undefined
-                }
-            }
-        })
+    this.audioPlayer.on("stateChange", (_, newState) => {
+      if (!this.voiceConnection) return;
+
+      if (newState.status === AudioPlayerStatus.Idle) {
+        this.pauseState = true;
+        WS.updatePauseState(this.guild.id, this.pauseState);
+        if (this.currentMusic) void this.playNextAudio();
+      }
+      else if (newState.status === AudioPlayerStatus.Paused) {
+        this.pauseState = true;
+        WS.updatePauseState(this.guild.id, this.pauseState);
+      }
+      else if (newState.status === AudioPlayerStatus.Playing) {
+        this.pauseState = false;
+        WS.updatePauseState(this.guild.id, this.pauseState);
+      }
+      
+      if (this.voiceChannelTimeout) {
+        clearTimeout(this.voiceChannelTimeout);
+        this.voiceChannelTimeout = undefined;
+      }
+    });
+
+    this.audioPlayer.on("error", (err) => {
+      console.error(`audioPlayer: Playback failed for guild ${this.guild.id}:`, err);
+      WS.error(
+        this.guild.id,
+        "INTERNAL",
+        "Audio playback failed. Check the backend logs for details.",
+        err,
+      );
+      void this.playNextAudio();
+    });
+  }
+
+  /**
+   * Play a music to the current voice connection
+   * @param music Music to play
+   * @returns True if it worked, false otherwise
+   */
+  public async play(music: Music): Promise<boolean> {
+    if (!this.voiceChannelId) {
+      throw new Error("No voice channel selected.");
     }
 
-    play(music: Music) {
-        if (!this.voiceChannelId) return;
-
-        const audioPath = path.join(DATA_PATH, `${music.hash}.opus`)
-        const audioResource = createAudioResource(audioPath)
-
-        this.voiceConnection?.subscribe(this.audioPlayer)
-        this.audioPlayer.play(audioResource);
-
-        return;
+    const audioPath = path.join(DATA_PATH, `${music.hash}.opus`);
+    if (!fs.existsSync(audioPath)) {
+      throw new Error(`Audio file not found: ${audioPath}`);
     }
 
-    playNextAudio() {
-        const nextAudio = this.queue.shift();
-        this.currentMusic = nextAudio;
+    await this.ensureVoiceConnectionReady();
+    const audioResource = createAudioResource(audioPath);
 
-        const msg: QueueUpdatedWSMessage = {
-            type: "queue_updated",
-            payload: {
-                current_music: this.currentMusic,
-                queue: this.queue
-            }
-        }
-        WS.broadcast(this.guild.id, msg)
+    this.audioPlayer.play(audioResource);
 
-        if (!nextAudio) {
-            this.pauseState = true
+    this.pauseState = false;
 
-            const msg: PauseStateUpdatedWSMessage = {
-                type: "pause_state_updated",
-                payload: {
-                    pause: this.pauseState
-                }
-            }
+    return true;
+  }
 
-            WS.broadcast(this.guild.id, msg)
-        } else {
-            this.pauseState = false
-            this.play(nextAudio)
+  /**
+   * Play next audio from the queue
+   */
+  public async playNextAudio(): Promise<void> {
+    const nextAudio = this.queue.shift();
 
-            const msg: PauseStateUpdatedWSMessage = {
-                type: "pause_state_updated",
-                payload: {
-                    pause: this.pauseState
-                }
-            }
+    if (!nextAudio) {
+      this.resetQueue()
+    } else {
+      this.currentMusic = nextAudio;
+      this.pauseState = false;
+      WS.updateQueue(this.guild.id, this.currentMusic, this.queue);
 
-            WS.broadcast(this.guild.id, msg)
-        }
+      try {
+        await this.play(nextAudio);
+        WS.updateQueue(this.guild.id, this.currentMusic, this.queue);
+      } catch (err) {
+        this.queue.unshift(nextAudio);
+        this.currentMusic = undefined;
+        console.error(`playNextAudio: Failed for guild ${this.guild.id}:`, err);
+        WS.error(
+          this.guild.id,
+          "INTERNAL",
+          "Could not play the selected audio.",
+          err,
+        );
+        this.pauseState = true;
+        WS.updateQueue(this.guild.id, this.currentMusic, this.queue);
+        WS.updatePauseState(this.guild.id, this.pauseState);
+      }
+    }
+  }
+
+  /**
+   * Remove all musics from the queue
+   */
+  public resetQueue(): void {
+    this.queue = [];
+    this.currentMusic = undefined;
+    this.pauseState = true;
+    if (this.audioPlayer.state.status !== AudioPlayerStatus.Idle) {
+      this.audioPlayer.stop(true);
     }
 
-    clearQueue() {
-        this.queue = []
-        this.currentMusic = undefined
-        this.pauseState = true
-        this.audioPlayer.stop(true)
+    WS.updateQueue(this.guild.id, this.currentMusic, this.queue)
+  }
 
-        const msg: QueueUpdatedWSMessage = {
-            type: "queue_updated",
-            payload: {
-                current_music: this.currentMusic,
-                queue: this.queue
-            }
-        }
-        WS.broadcast(this.guild.id, msg)
+  /**
+   * Pause music
+   */
+  private pause(): void {
+    this.pauseState = true;
+    this.audioPlayer.pause();
+  }
 
-        const msg2: PauseStateUpdatedWSMessage = {
-            type: "pause_state_updated",
-            payload: {
-                pause: this.pauseState
-            }
-        }
+  /**
+   * Unpause music
+   */
+  private async unpause(): Promise<void> {
+    this.pauseState = false;
+    if (!this.currentMusic) await this.playNextAudio();
+    else this.audioPlayer.unpause();
+  }
 
-        WS.broadcast(this.guild.id, msg2)
+  /**
+   * Set pause state
+   * @param pauseState Pause state
+   */
+  public async updatePauseState(pauseState: boolean): Promise<void> {
+    if (pauseState) this.pause();
+    else await this.unpause();
+  }
+
+  /**
+   * Init voice connection to join voice channel
+   * @returns True if is worked, false otherwise
+   */
+  public async joinVoiceChannel(): Promise<boolean> {
+    const connection = await this.createVoiceConnection();
+    this.attachAudioPlayer(connection);
+    return true
+  }
+
+  public async syncVoiceChannel(channelId: string): Promise<void> {
+    this.voiceChannelId = channelId;
+    const connection = await this.createVoiceConnection();
+    this.attachAudioPlayer(connection);
+  }
+
+  private async createVoiceConnection(): Promise<VoiceConnection> {
+    if (!this.voiceChannelId) {
+      throw new Error("No voice channel selected.");
     }
 
-    async updatePauseState(pauseState: boolean) {
-        if (pauseState) this.pause()
-        else this.unpause()
+    if (this.voiceConnectionPromise) {
+      return await this.voiceConnectionPromise;
     }
 
-    private pause() {
-        this.pauseState = true
-        this.audioPlayer.pause()
-
-        const msg: PauseStateUpdatedWSMessage = {
-            type: "pause_state_updated",
-            payload: {
-                pause: this.pauseState
-            }
-        }
-
-        WS.broadcast(this.guild.id, msg)
+    if (
+      this.voiceConnection &&
+      this.voiceConnection.state.status !== VoiceConnectionStatus.Destroyed &&
+      this.connectedVoiceChannelId === this.voiceChannelId
+    ) {
+      return await this.ensureVoiceConnectionReady();
     }
 
-    private unpause() {
-        this.pauseState = false
-        if (!this.currentMusic) this.playNextAudio()
-        else this.audioPlayer.unpause()
+    const connection = joinVoiceChannel({
+      adapterCreator: this.guild.voiceAdapterCreator,
+      channelId: this.voiceChannelId,
+      guildId: this.guild.id,
+      selfDeaf: false,
+    });
+    this.voiceConnection = connection;
+    this.connectedVoiceChannelId = this.voiceChannelId;
 
-        const msg: PauseStateUpdatedWSMessage = {
-            type: "pause_state_updated",
-            payload: {
-                pause: this.pauseState
-            }
-        }
+    this.observeVoiceConnection(connection);
 
-        WS.broadcast(this.guild.id, msg)
+    this.voiceConnectionPromise = this.ensureVoiceConnectionReady().finally(() => {
+      this.voiceConnectionPromise = undefined;
+    });
+
+    return await this.voiceConnectionPromise;
+  }
+
+  private async ensureVoiceConnectionReady(): Promise<VoiceConnection> {
+    if (!this.voiceConnection) {
+      return await this.createVoiceConnection();
     }
 
-    joinVoiceChannel() {
-        if (!this.voiceChannelId) return;
-        this.voiceConnection = joinVoiceChannel({
-            adapterCreator: this.guild.voiceAdapterCreator,
-            channelId: this.voiceChannelId,
-            guildId: this.guild.id
-        })
+    const connection = this.voiceConnection;
+
+    if (connection.state.status === VoiceConnectionStatus.Ready) {
+      this.attachAudioPlayer(connection);
+      return connection;
     }
 
-    destroy() {
-        try {
-            this.audioPlayer.stop();
-            this.voiceConnection?.destroy();
-            clearTimeout(this.voiceChannelTimeout);
-        } catch { }
+    try {
+      await entersState(
+        connection,
+        VoiceConnectionStatus.Ready,
+        Jukebox.voiceReadyTimeoutMs,
+      );
+      this.attachAudioPlayer(connection);
+      return connection;
+    } catch {
+      if (this.voiceConnection === connection) {
+        this.destroyVoiceConnection();
+      } else {
+        this.destroyConnection(connection);
+      }
+
+      throw new Error("Discord voice connection is not ready.");
     }
+  }
+
+  private attachAudioPlayer(connection: VoiceConnection): void {
+    const subscription = connection.subscribe(this.audioPlayer);
+    if (!subscription) {
+      throw new Error("Could not subscribe the audio player to the voice connection.");
+    }
+  }
+
+  private observeVoiceConnection(connection: VoiceConnection): void {
+    if (this.observedVoiceConnection === connection) return;
+
+    this.observedVoiceConnection = connection;
+    connection.on("error", (err) => {
+      console.error(`voiceConnection: Error for guild ${this.guild.id}:`, err);
+      WS.error(
+        this.guild.id,
+        "INTERNAL",
+        "Discord voice connection failed.",
+        err,
+      );
+    });
+  }
+
+  private destroyVoiceConnection(): void {
+    const connection = this.voiceConnection;
+    this.voiceConnectionPromise = undefined;
+    if (!connection) return;
+
+    this.destroyConnection(connection);
+    this.voiceConnection = undefined;
+    this.connectedVoiceChannelId = undefined;
+    this.observedVoiceConnection = undefined;
+  }
+
+  private destroyConnection(connection: VoiceConnection): void {
+    connection.removeAllListeners();
+    if (connection.state.status !== VoiceConnectionStatus.Destroyed) {
+      try {
+        connection.destroy();
+      } catch (err) {
+        console.warn(
+          `voiceConnection: ${this.guild.id} destroy ignored:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  /**
+   * Destroy jukebox audio components
+   */
+  public destroy(): void {
+    try {
+      this.queue = [];
+      this.currentMusic = undefined;
+      this.pauseState = true;
+      WS.updateQueue(this.guild.id, this.currentMusic, this.queue);
+      WS.updatePauseState(this.guild.id, this.pauseState);
+
+      this.audioPlayer.stop();
+      this.destroyVoiceConnection();
+      clearTimeout(this.voiceChannelTimeout);
+      this.voiceChannelTimeout = undefined;
+    } catch {
+      console.error(`destroy: Destroy jukebox audio components failed: ${this.guild.id}`)
+    }
+  }
 }
