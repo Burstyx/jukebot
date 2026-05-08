@@ -2,14 +2,14 @@ import { getEnvVar } from "@/config/constants";
 import { Channel, Music } from "@jukebot/types";
 import axios from "axios";
 
-const API_URL = getEnvVar("NEXT_PUBLIC_API_URL");
+const apiUrl = () => getEnvVar("NEXT_PUBLIC_API_URL");
 
 export default class ApiService {
   // Channels
 
   static async getChannels(guildId: string) {
     return await axios.get<Channel[]>(
-      `${API_URL}/guilds/get_channels/${guildId}`,
+      `${apiUrl()}/guilds/get_channels/${guildId}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -22,7 +22,7 @@ export default class ApiService {
 
   static async addToQueue(guildId: string, musicHash: string) {
     return await axios.put<Music[]>(
-      `${API_URL}/guilds/add_to_queue/${guildId}/${musicHash}`,
+      `${apiUrl()}/guilds/add_to_queue/${guildId}/${musicHash}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -33,7 +33,7 @@ export default class ApiService {
 
   static async getMusics(guildId: string) {
     return await axios.get<Music[]>(
-      `${API_URL}/guilds/get_musics/${guildId}`,
+      `${apiUrl()}/guilds/get_musics/${guildId}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -44,7 +44,7 @@ export default class ApiService {
 
   static async getSelectedChannelId(guildId: string) {
     return await axios.get<{ ok: boolean; channel_id?: string | null }>(
-      `${API_URL}/guilds/get_selected_channel/${guildId}`,
+      `${apiUrl()}/guilds/get_selected_channel/${guildId}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -58,7 +58,7 @@ export default class ApiService {
       ok: boolean;
       current_music?: Music;
       queue: Music[];
-    }>(`${API_URL}/guilds/get_queue/${guildId}`, {
+    }>(`${apiUrl()}/guilds/get_queue/${guildId}`, {
       headers: {
         "Content-Type": "application/json",
       },
@@ -67,7 +67,7 @@ export default class ApiService {
 
   static async pauseQueue(guildId: string) {
     return await axios.get<{ ok: boolean }>(
-      `${API_URL}/guilds/pause/${guildId}`,
+      `${apiUrl()}/guilds/pause/${guildId}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -78,7 +78,7 @@ export default class ApiService {
 
   static async unpauseQueue(guildId: string) {
     return await axios.get<{ ok: boolean }>(
-      `${API_URL}/guilds/unpause/${guildId}`,
+      `${apiUrl()}/guilds/unpause/${guildId}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -89,7 +89,7 @@ export default class ApiService {
 
   static async getPauseState(guildId: string) {
     return await axios.get<boolean>(
-      `${API_URL}/guilds/get_pause_state/${guildId}`,
+      `${apiUrl()}/guilds/get_pause_state/${guildId}`,
     );
   }
 
@@ -100,7 +100,7 @@ export default class ApiService {
     rawData: any,
   ) {
     return await axios.post<Music>(
-      `${API_URL}/library/file/${guildId}`,
+      `${apiUrl()}/library/file/${guildId}`,
       rawData,
       {
         headers: {
@@ -113,7 +113,7 @@ export default class ApiService {
 
   static async deleteMusic(guildId: string, musicHash: string) {
     return await axios.delete(
-      `${API_URL}/library/delete_music/${guildId}/${musicHash}`,
+      `${apiUrl()}/library/delete_music/${guildId}/${musicHash}`,
       {
         headers: {
           "Content-Type": "application/json",
